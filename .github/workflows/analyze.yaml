@@ -7,7 +7,7 @@ on:
         description: Project ID
         required: true
       project_source:
-        description: Project Source
+        description: Project Source (Node or Local)
         required: true
       pipeline_type:
         description: Pipeline type
@@ -22,12 +22,22 @@ on:
         description: Project Status
         required: true
 
+env:
+  API_BASE_URL: "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP"
+  NODE_API_URL: "https://odc-nodejs.onrender.com"
+  CALLBACK_URL: "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive"
+
 jobs:
 
+  # ------------------------------------------------------
+  # 1. SETUP
+  # ------------------------------------------------------
   setup:
     runs-on: ubuntu-latest
+
     outputs:
-      project_id: ${{ steps.set.outputs.project_id }}
+      project_id: ${{ github.event.inputs.project_id }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -35,76 +45,175 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: pip install requests
 
-      - name: Set variables
-        id: set
+      - name: Log context
         run: |
-          echo "project_id=${{ github.event.inputs.project_id }}" >> $GITHUB_OUTPUT
+          echo "Pipeline initialized"
+          echo "Project ID: ${{ github.event.inputs.project_id }}"
+          echo "Source: ${{ github.event.inputs.project_source }}"
+          echo "Type: ${{ github.event.inputs.pipeline_type }}"
 
 
+  # ------------------------------------------------------
+  # 2. FETCH DATA (dynamic source)
+  # ------------------------------------------------------
   fetch_data:
     runs-on: ubuntu-latest
     needs: setup
+
     outputs:
       overview: ${{ steps.fetch.outputs.overview }}
+
     steps:
-      - name: Fetch project overview
+      - name: Fetch project data
         id: fetch
+        shell: bash
         run: |
-          echo "📡 Fetching project overview..."
+          set -e
 
-          RESPONSE=$(curl -s "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/GetProjectById/projects/${{ github.event.inputs.project_id }}/overview")
+          echo "Fetching project data..."
+          echo "Source: ${{ github.event.inputs.project_source }}"
 
-          echo "Overview: $RESPONSE"
+          if [ "${{ github.event.inputs.project_source }}" = "NodeJS" ]; then
+            
+            echo "Fetching from NodeJS..."
 
-          echo "overview=$RESPONSE" >> $GITHUB_OUTPUT
+            RESPONSE=$(curl -s "$NODE_API_URL/projects/${{ github.event.inputs.project_id }}")
+
+            echo "NodeJS response:"
+            echo "$RESPONSE"
+
+            TOTAL=$(echo "$RESPONSE" | jq '.Tasks | length')
+            COMPLETED=$(echo "$RESPONSE" | jq '[.Tasks[] | select(.Status == "Done")] | length')
+
+            NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            OVERDUE=$(echo "$RESPONSE" | jq --arg now "$NOW" '[.Tasks[] | select(.Status != "Done" and .DueDate < $now)] | length')
+
+            OVERVIEW=$(jq -n \
+              --arg total "$TOTAL" \
+              --arg completed "$COMPLETED" \
+              --arg overdue "$OVERDUE" \
+              '
+              {
+                TotalTasks: ($total | tonumber),
+                CompletedTasks: ($completed | tonumber),
+                OverdueTasks: ($overdue | tonumber)
+              }')
+
+          else
+
+            echo "Fetching from OutSystems..."
+
+            OVERVIEW=$(curl -s "$API_BASE_URL/rest/GetProjectById/projects/${{ github.event.inputs.project_id }}/overview")
+
+            echo "ODC response:"
+            echo "$OVERVIEW"
+
+          fi
+
+          echo "Normalized overview:"
+          echo "$OVERVIEW"
+
+          echo "overview=$OVERVIEW" >> $GITHUB_OUTPUT
 
 
+  # ------------------------------------------------------
+  # 3. ANALYZE
+  # ------------------------------------------------------
   analyze:
     runs-on: ubuntu-latest
     needs: fetch_data
+
     outputs:
       summary: ${{ steps.analysis.outputs.summary }}
       risk: ${{ steps.analysis.outputs.risk }}
+
     steps:
-      - name: Run analysis logic
+      - name: Install jq (safe)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run analysis
         id: analysis
+        shell: bash
         run: |
-          echo "🧠 Starting analysis..."
+          set -e
+
+          echo "Starting analysis..."
 
           OVERVIEW='${{ needs.fetch_data.outputs.overview }}'
 
-          TOTAL=$(echo $OVERVIEW | jq '.TotalTasks')
-          COMPLETED=$(echo $OVERVIEW | jq '.CompletedTasks')
-          OVERDUE=$(echo $OVERVIEW | jq '.OverdueTasks')
+          TOTAL=$(echo "$OVERVIEW" | jq '.TotalTasks // 0')
+          COMPLETED=$(echo "$OVERVIEW" | jq '.CompletedTasks // 0')
+          OVERDUE=$(echo "$OVERVIEW" | jq '.OverdueTasks // 0')
 
-          echo "Total: $TOTAL, Completed: $COMPLETED, Overdue: $OVERDUE"
-
-          SUMMARY="Project '${{ github.event.inputs.project_name }}' has $COMPLETED completed tasks and $OVERDUE overdue tasks."
-          
-          if [ "$OVERDUE" -gt 0 ]; then
-            RISK="There are overdue tasks requiring attention."
+          if [ "$TOTAL" -gt 0 ]; then
+            PROGRESS=$((COMPLETED * 100 / TOTAL))
           else
+            PROGRESS=0
+          fi
+
+          echo "Metrics:"
+          echo "Total: $TOTAL | Completed: $COMPLETED | Overdue: $OVERDUE | Progress: $PROGRESS%"
+
+          # ---------------------------
+          # Summary
+          # ---------------------------
+          SUMMARY="Project '${{ github.event.inputs.project_name }}' is '${{ github.event.inputs.project_status }}' with $PROGRESS% completion. $COMPLETED of $TOTAL tasks are completed."
+
+          if [ "$OVERDUE" -gt 0 ]; then
+            SUMMARY="$SUMMARY There are $OVERDUE overdue tasks requiring attention."
+          else
+            SUMMARY="$SUMMARY No overdue tasks detected."
+          fi
+
+          # ---------------------------
+          # Risk
+          # ---------------------------
+          RISK=""
+
+          if [ "$OVERDUE" -gt 0 ]; then
+            RISK="There are $OVERDUE overdue tasks impacting delivery."
+          fi
+
+          if [ "$PROGRESS" -lt 50 ]; then
+            RISK="$RISK Project progress is below 50%."
+          fi
+
+          if [ -z "$RISK" ]; then
             RISK="No major risks detected."
           fi
+
+          echo "Summary:"
+          echo "$SUMMARY"
+
+          echo "Risk:"
+          echo "$RISK"
 
           echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
           echo "risk=$RISK" >> $GITHUB_OUTPUT
 
 
+  # ------------------------------------------------------
+  # 4. CALLBACK
+  # ------------------------------------------------------
   callback:
     runs-on: ubuntu-latest
     needs: analyze
-    steps:
-      - name: Send callback to OutSystems
-        run: |
-          echo "📤 Sending callback..."
 
-          curl -X POST "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive" \
+    steps:
+      - name: Send results to OutSystems
+        shell: bash
+        run: |
+          set -e
+
+          echo "Sending callback..."
+
+          curl -s -X POST "$CALLBACK_URL" \
             -H "Content-Type: application/json" \
             -d '{
               "PipelineId": ${{ github.event.inputs.correlation_id }},
@@ -114,3 +223,5 @@ jobs:
               "ErrorMessage": "",
               "WorkflowRunUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }'
+
+          echo "✅ Callback completed"
