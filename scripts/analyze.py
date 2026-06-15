@@ -1,4 +1,5 @@
 import sys
+import requests
 
 def main():
     # Inputs do GitHub Actions
@@ -24,6 +25,27 @@ def main():
 
     print("Summary:", summary)
     print("Risk Report:", risk_report)
+
+    # Callback to OutSystems
+    callback_url = "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive"
+
+    payload = {
+        "CorrelationId": correlation_id,
+        "Status": "Completed",
+        "Summary": summary,
+        "RiskReport": risk_report,
+        "ErrorMessage": "",
+        "WorkflowRunUrl": "https://github.com/gabrielslucio/smart-portfolio-pipeline/actions"
+    }
+
+    try:
+        response = requests.post(callback_url, json=payload)
+
+        print("Callback response:", response.status_code)
+        print(response.text)
+    
+    except Exception as e:
+        print("Error during callback:", str(e))
 
 if __name__ == "__main__":
     main()
