@@ -30,12 +30,21 @@ def main():
     callback_url = "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive"
 
     payload = {
-        "CorrelationId": correlation_id,
-        "Status": "Completed",
+        "PipelineExecutionId": int(correlation_id),
+        "ProjectId": int(project_id),
+        "ProjectSource": project_source,
+        "PipelineType": pipeline_type,
+        "Status": project_status,
+        "ExecutionId": correlation_id,
+        "WorkflowRunUrl": "https://github.com/gabrielslucio/smart-portfolio-pipeline/actions",
+        "RequestedBy": "GitHub Actions",
+        "RequestedAt": None,
+        "StartedAt": None,
+        "CompletedAt": None,
         "Summary": summary,
         "RiskReport": risk_report,
         "ErrorMessage": "",
-        "WorkflowRunUrl": "https://github.com/gabrielslucio/smart-portfolio-pipeline/actions"
+        "ProjectName": project_name
     }
 
     try:
