@@ -118,9 +118,9 @@ jobs:
 
           echo "Normalized overview:"
           echo "$OVERVIEW"
-
-          echo "overview=$OVERVIEW" >> $GITHUB_OUTPUT
-
+          
+          OVERVIEW_COMPACT=$(echo "$OVERVIEW" | jq -c .)
+          echo "overview=$OVERVIEW_COMPACT" >> $GITHUB_OUTPUT
 
   # ------------------------------------------------------
   # 3. ANALYZE
