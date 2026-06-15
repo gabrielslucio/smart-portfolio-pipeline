@@ -30,13 +30,21 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Show inputs (debug)
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install requests
+      - name: Run analysis script
         run: |
-          echo "Project ID: ${{ github.event.inputs.project_id }}"
-          echo "Project Source: ${{ github.event.inputs.project_source }}"
-          echo "Pipeline Type: ${{ github.event.inputs.pipeline_type }}"
-          echo "Correlation ID: ${{ github.event.inputs.correlation_id }}"
-          echo "Project Name: ${{ github.event.inputs.project_name }}"
-          echo "Project Status: ${{ github.event.inputs.project_status }}"
+          python scripts/analyze.py \
+            "${{ github.event.inputs.project_id }}" \
+            "${{ github.event.inputs.project_source }}" \
+            "${{ github.event.inputs.pipeline_type }}" \
+            "${{ github.event.inputs.correlation_id }}" \
+            "${{ github.event.inputs.project_name }}" \
+            "${{ github.event.inputs.project_status }}"
