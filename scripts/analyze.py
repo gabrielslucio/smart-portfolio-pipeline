@@ -25,5 +25,5 @@ def main():
     print("Summary:", summary)
     print("Risk Report:", risk_report)
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
