@@ -118,7 +118,7 @@ jobs:
 
           echo "Normalized overview:"
           echo "$OVERVIEW"
-          
+
           OVERVIEW_COMPACT=$(echo "$OVERVIEW" | jq -c .)
           echo "overview=$OVERVIEW_COMPACT" >> $GITHUB_OUTPUT
 
@@ -211,17 +211,20 @@ jobs:
         run: |
           set -e
 
-          echo "Sending callback..."
+          echo "📤 Sending callback..."
+
+          SUMMARY=$(printf '%s' "${{ needs.analyze.outputs.summary }}" | jq -R .)
+          RISK=$(printf '%s' "${{ needs.analyze.outputs.risk }}" | jq -R .)
 
           curl -s -X POST "$CALLBACK_URL" \
             -H "Content-Type: application/json" \
-            -d '{
-              "PipelineId": ${{ github.event.inputs.correlation_id }},
-              "Status": "Completed",
-              "Summary": "${{ needs.analyze.outputs.summary }}",
-              "RiskReport": "${{ needs.analyze.outputs.risk }}",
-              "ErrorMessage": "",
-              "WorkflowRunUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }'
+            -d "{
+              \"PipelineId\": ${{ github.event.inputs.correlation_id }},
+              \"Status\": \"Completed\",
+              \"Summary\": $SUMMARY,
+              \"RiskReport\": $RISK,
+              \"ErrorMessage\": \"\",
+              \"WorkflowRunUrl\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            }"
 
           echo "✅ Callback completed"
