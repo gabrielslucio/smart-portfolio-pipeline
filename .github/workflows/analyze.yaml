@@ -6,45 +6,111 @@ on:
       project_id:
         description: Project ID
         required: true
-
       project_source:
-        description: Project Source (Node or Local)
+        description: Project Source
         required: true
-
       pipeline_type:
         description: Pipeline type
         required: true
-
       correlation_id:
         description: Correlation ID
         required: true
-
       project_name:
         description: Project Name
         required: true
-
       project_status:
         description: Project Status
         required: true
 
 jobs:
-  analyze:
+
+  setup:
     runs-on: ubuntu-latest
+    outputs:
+      project_id: ${{ steps.set.outputs.project_id }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Install dependencies
         run: pip install requests
-      - name: Run analysis script
+
+      - name: Set variables
+        id: set
         run: |
-          python scripts/analyze.py \
-            "${{ github.event.inputs.project_id }}" \
-            "${{ github.event.inputs.project_source }}" \
-            "${{ github.event.inputs.pipeline_type }}" \
-            "${{ github.event.inputs.correlation_id }}" \
-            "${{ github.event.inputs.project_name }}" \
-            "${{ github.event.inputs.project_status }}"
+          echo "project_id=${{ github.event.inputs.project_id }}" >> $GITHUB_OUTPUT
+
+
+  fetch_data:
+    runs-on: ubuntu-latest
+    needs: setup
+    outputs:
+      overview: ${{ steps.fetch.outputs.overview }}
+    steps:
+      - name: Fetch project overview
+        id: fetch
+        run: |
+          echo "📡 Fetching project overview..."
+
+          RESPONSE=$(curl -s "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/GetProjectById/projects/${{ github.event.inputs.project_id }}/overview")
+
+          echo "Overview: $RESPONSE"
+
+          echo "overview=$RESPONSE" >> $GITHUB_OUTPUT
+
+
+  analyze:
+    runs-on: ubuntu-latest
+    needs: fetch_data
+    outputs:
+      summary: ${{ steps.analysis.outputs.summary }}
+      risk: ${{ steps.analysis.outputs.risk }}
+    steps:
+      - name: Run analysis logic
+        id: analysis
+        run: |
+          echo "🧠 Starting analysis..."
+
+          OVERVIEW='${{ needs.fetch_data.outputs.overview }}'
+
+          TOTAL=$(echo $OVERVIEW | jq '.TotalTasks')
+          COMPLETED=$(echo $OVERVIEW | jq '.CompletedTasks')
+          OVERDUE=$(echo $OVERVIEW | jq '.OverdueTasks')
+
+          echo "Total: $TOTAL, Completed: $COMPLETED, Overdue: $OVERDUE"
+
+          SUMMARY="Project '${{ github.event.inputs.project_name }}' has $COMPLETED completed tasks and $OVERDUE overdue tasks."
+          
+          if [ "$OVERDUE" -gt 0 ]; then
+            RISK="There are overdue tasks requiring attention."
+          else
+            RISK="No major risks detected."
+          fi
+
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
+          echo "risk=$RISK" >> $GITHUB_OUTPUT
+
+
+  callback:
+    runs-on: ubuntu-latest
+    needs: analyze
+    steps:
+      - name: Send callback to OutSystems
+        run: |
+          echo "📤 Sending callback..."
+
+          curl -X POST "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "PipelineId": ${{ github.event.inputs.correlation_id }},
+              "Status": "Completed",
+              "Summary": "${{ needs.analyze.outputs.summary }}",
+              "RiskReport": "${{ needs.analyze.outputs.risk }}",
+              "ErrorMessage": "",
+              "WorkflowRunUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }'
