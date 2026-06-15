@@ -6,7 +6,7 @@ def main():
     project_id = sys.argv[1]
     project_source = sys.argv[2]
     pipeline_type = sys.argv[3]
-    correlation_id = sys.argv[4]
+    pipeline_id = sys.argv[4]
     project_name = sys.argv[5]
     project_status = sys.argv[6]
 
@@ -30,28 +30,21 @@ def main():
     callback_url = "https://personal-fspba94p-dev.outsystems.app/SmartPortfolioManager_APP/rest/PipelineCallback/receive"
 
     payload = {
-        "PipelineExecutionId": int(correlation_id),
-        "ProjectId": int(project_id),
-        "ProjectSource": project_source,
-        "PipelineType": pipeline_type,
+        "PipelineId": pipeline_id,
         "Status": project_status,
-        "ExecutionId": correlation_id,
-        "WorkflowRunUrl": "https://github.com/gabrielslucio/smart-portfolio-pipeline/actions",
-        "RequestedBy": "GitHub Actions",
-        "RequestedAt": None,
-        "StartedAt": None,
-        "CompletedAt": None,
         "Summary": summary,
         "RiskReport": risk_report,
         "ErrorMessage": "",
-        "ProjectName": project_name
+        "WorkflowRunUrl": "https://github.com/gabrielslucio/smart-portfolio-pipeline/actions"
     }
 
-    try:
-        response = requests.post(callback_url, json=payload)
+    print("Payload:", payload)
 
+    try:
+        response = requests.post(callback_url, json=payload, timeout=30)
         print("Callback response:", response.status_code)
         print(response.text)
+        response.raise_for_status()  # Raise an error for bad responses
     
     except Exception as e:
         print("Error during callback:", str(e))
