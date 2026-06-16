@@ -79,7 +79,7 @@ def main():
         print(f"Overdue Tasks: {overdue_tasks}")
         print(f"Progress: {progress}%")
 
-        # ✅ Generate insights
+        #Generate insights
         print(" Generating summary...")
         summary = generate_summary(
             project_name,
