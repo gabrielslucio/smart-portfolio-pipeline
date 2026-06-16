@@ -1,4 +1,4 @@
-name: Smart Portfolio Automation - Automatic Analysis
+name: SmartPortfolio - Automatic Project Analysis
 
 on:
   workflow_dispatch:
